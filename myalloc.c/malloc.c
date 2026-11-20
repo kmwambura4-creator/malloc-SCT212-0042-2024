@@ -117,6 +117,37 @@ static block_t *find_fit(size_t need)
 
     return NULL;
 }/* Allocate memory using the first-fit strategy */
+/* Split a block when it has enough extra space */
+static void split_block(block_t *block, size_t need)
+{
+    /* Check whether splitting is possible */
+    if (block->size >= need + HDR + 16) {
+
+        /* Calculate the size of the remaining block */
+        size_t remaining_size = block->size - need - HDR;
+
+        /* Locate where the new block header should begin */
+        block_t *new_block =
+            (block_t *)((char *)payload(block) + need);
+
+        /* Initialize the new free block */
+        new_block->size = remaining_size;
+        new_block->free = 1;
+        new_block->magic = MAGIC;
+        new_block->next = block->next;
+
+        /* Link the new block into the list */
+        block->next = new_block;
+
+        /* Update tail if the original block was the last block */
+        if (tail == block) {
+            tail = new_block;
+        }
+
+        /* Reduce the size of the original block */
+        block->size = need;
+    }
+}
 void *my_malloc(size_t size)
 {
     /* Zero-byte requests return NULL */
@@ -149,9 +180,12 @@ void *my_malloc(size_t size)
         }
     }
 
-    /* Mark the selected block as occupied */
-    block->free = 0;
+    /* Split the block if it has enough extra space */
+split_block(block, need);
 
-    /* Return the usable memory, not the header */
-    return payload(block);
+/* Mark the selected block as occupied */
+block->free = 0;
+
+/* Return the usable memory, not the header */
+return payload(block);
 }
