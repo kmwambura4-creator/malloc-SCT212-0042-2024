@@ -189,3 +189,73 @@ block->free = 0;
 /* Return the usable memory, not the header */
 return payload(block);
 }
+/* Merge physically adjacent free blocks */
+static void coalesce(void)
+{
+    block_t *current = head;
+
+    while (current != NULL && current->next != NULL) {
+
+        block_t *next_block = current->next;
+
+        if (current->free == 1 && next_block->free == 1) {
+
+            /* Check whether the blocks are physically adjacent */
+            void *current_end =
+                (char *)payload(current) + current->size;
+
+            if (current_end == (void *)next_block) {
+
+                /* Merge the blocks */
+                current->size += HDR + next_block->size;
+
+                /* Remove the next block from the linked list */
+                current->next = next_block->next;
+
+                /* Update tail if necessary */
+                if (tail == next_block) {
+                    tail = current;
+                }
+
+                continue;
+            }
+        }
+
+        current = current->next;
+    }
+}
+/* Release allocated memory */
+void my_free(void *ptr)
+{
+    /* Ignore NULL pointers */
+    if (ptr == NULL) {
+        return;
+    }
+
+    /* Search for the block */
+    block_t *block = head;
+
+    while (block != NULL && payload(block) != ptr) {
+        block = block->next;
+    }
+
+    /* Check for invalid pointers */
+    if (block == NULL || block->magic != MAGIC) {
+        const char message[] = "my_free: invalid pointer\n";
+        write(STDERR_FILENO, message, sizeof(message) - 1);
+        return;
+    }
+
+    /* Check for double free */
+    if (block->free == 1) {
+        const char message[] = "my_free: double free detected\n";
+        write(STDERR_FILENO, message, sizeof(message) - 1);
+        return;
+    }
+
+    /* Mark the block as free */
+    block->free = 1;
+
+    /* Merge adjacent free blocks */
+    coalesce();
+}
