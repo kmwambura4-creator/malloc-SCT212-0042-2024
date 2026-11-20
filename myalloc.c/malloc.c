@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "myalloc.h"
+#include <string.h>
 
 /* Structure representing one memory block */
 typedef struct block {
@@ -258,4 +259,103 @@ void my_free(void *ptr)
 
     /* Merge adjacent free blocks */
     coalesce();
+}
+/* Allocate memory and initialize it to zero */
+void *my_calloc(size_t nmemb, size_t size)
+{
+    /* Check for multiplication overflow */
+    if (nmemb != 0 && size > SIZE_MAX / nmemb) {
+        return NULL;
+    }
+
+    /* Calculate total memory required */
+    size_t total = nmemb * size;
+
+    /* Allocate memory */
+    void *ptr = my_malloc(total);
+
+    if (ptr == NULL) {
+        return NULL;
+    }
+
+    /* Initialize all allocated bytes to zero */
+    memset(ptr, 0, total);
+
+    return ptr;
+}
+/* Resize previously allocated memory */
+void *my_realloc(void *ptr, size_t size)
+{
+    /* If pointer is NULL, behave like malloc */
+    if (ptr == NULL) {
+        return my_malloc(size);
+    }
+
+    /* If size is zero, free the memory */
+    if (size == 0) {
+        my_free(ptr);
+        return NULL;
+    }
+
+    /* Prevent size overflow during alignment */
+    if (size > SIZE_MAX - 15) {
+        return NULL;
+    }
+
+    /* Find the block belonging to this pointer */
+    block_t *block = head;
+
+    while (block != NULL && payload(block) != ptr) {
+        block = block->next;
+    }
+
+    /* Reject invalid or already-freed pointers */
+    if (block == NULL || block->magic != MAGIC || block->free == 1) {
+        return NULL;
+    }
+
+    size_t need = align_up(size);
+
+    /* If the current block is already large enough */
+    if (block->size >= need) {
+        split_block(block, need);
+        coalesce();
+        return ptr;
+    }
+
+    /* Check whether the next block can be merged */
+    block_t *next = block->next;
+
+    if (next != NULL &&
+        next->free == 1 &&
+        (char *)payload(block) + block->size == (char *)next &&
+        block->size <= SIZE_MAX - HDR - next->size &&
+        block->size + HDR + next->size >= need) {
+
+        block->size += HDR + next->size;
+        block->next = next->next;
+
+        if (tail == next) {
+            tail = block;
+        }
+
+        split_block(block, need);
+        return ptr;
+    }
+
+    /* Allocate a new block if expansion is necessary */
+    void *new_ptr = my_malloc(size);
+
+    if (new_ptr == NULL) {
+        return NULL;
+    }
+
+    /* Copy the existing data */
+    size_t copy_size = block->size < size ? block->size : size;
+    memcpy(new_ptr, ptr, copy_size);
+
+    /* Release the old block */
+    my_free(ptr);
+
+    return new_ptr;
 }
