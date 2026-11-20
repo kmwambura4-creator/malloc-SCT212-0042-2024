@@ -102,3 +102,56 @@ static block_t *grow(size_t need)
 
     return new_block;
 }
+/* Find the first free block that can satisfy the request */
+static block_t *find_fit(size_t need)
+{
+    block_t *current = head;
+
+    while (current != NULL) {
+        if (current->free == 1 && current->size >= need) {
+            return current;
+        }
+
+        current = current->next;
+    }
+
+    return NULL;
+}/* Allocate memory using the first-fit strategy */
+void *my_malloc(size_t size)
+{
+    /* Zero-byte requests return NULL */
+    if (size == 0) {
+        return NULL;
+    }
+
+    /* Prevent overflow during alignment */
+    if (size > SIZE_MAX - 15) {
+        return NULL;
+    }
+
+    /* Align the requested size to 16 bytes */
+    size_t need = align_up(size);
+
+    /* Search for a suitable free block */
+    block_t *block = find_fit(need);
+
+    /* If no suitable block exists, grow the heap */
+    if (block == NULL) {
+        if (grow(need) == NULL) {
+            return NULL;
+        }
+
+        /* Search again after growing the heap */
+        block = find_fit(need);
+
+        if (block == NULL) {
+            return NULL;
+        }
+    }
+
+    /* Mark the selected block as occupied */
+    block->free = 0;
+
+    /* Return the usable memory, not the header */
+    return payload(block);
+}
